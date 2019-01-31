@@ -84,8 +84,14 @@ class ArmTemplateDeploy:
         result = self.sm_client.list_subscriptions()
         for location in result:
             print(location.name)
-            # select random from list of results for location
-            # return self.location = ("location", randomselectedlocation)
+            location = location.name
+            usage_list = self.st_client.usage()
+            for location in usage_list:
+                print()
+                # TODO: the last for is wrong, need to get id of what is returned in usage
+                # az vm list-usage --subscription <subID> --location eastus --output table | grep -e vCPUs -e Name
+                # select random from list of results for location
+                # return self.location = ("location", randomselectedlocation)
 
     def create_resource_group(self):
         """Creates the Azure resource group for this deployment."""
