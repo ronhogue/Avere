@@ -24,13 +24,21 @@ from azure.mgmt.network import NetworkManagementClient
 from azure.mgmt.resource import ResourceManagementClient
 from azure.mgmt.resource.resources.models import DeploymentMode
 from azure.mgmt.storage import StorageManagementClient
+from azure.servicemanagement import ServiceManagementService
 
 
 class ArmTemplateDeploy:
-    def __init__(self, deploy_id=None, deploy_name="azurePySDK",
-                 deploy_params={}, location="westus2", resource_group=None,
-                 storage_account=None, template={}, _fields={}
-                 ):
+    def __init__(
+        self,
+        deploy_id=None,
+        deploy_name="azurePySDK",
+        deploy_params={},
+        location="westus2",
+        resource_group=None,
+        storage_account=None,
+        template={},
+        _fields={},
+    ):
         """Initialize, authenticate to Azure."""
         self.deploy_id = _fields.pop("deploy_id", deploy_id)
         self.deploy_name = _fields.pop("deploy_name", deploy_name)
@@ -60,24 +68,30 @@ class ArmTemplateDeploy:
             tenant=os.environ["AZURE_TENANT_ID"],
         )
         self.rm_client = ResourceManagementClient(
-            credentials=sp_creds,
-            subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
+            credentials=sp_creds, subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
         )
         self.nm_client = NetworkManagementClient(
-            credentials=sp_creds,
-            subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
+            credentials=sp_creds, subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
         )
         self.st_client = StorageManagementClient(
-            credentials=sp_creds,
-            subscription_id=os.environ['AZURE_SUBSCRIPTION_ID']
+            credentials=sp_creds, subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
         )
+        self.sm_client = ServiceManagementService(
+            credentials=sp_creds, subscription_id=os.environ["AZURE_SUBSCRIPTION_ID"]
+        )
+
+    def list_locations(self):
+        result = self.sm_client.list_subscriptions()
+        for location in result:
+            print(location.name)
+            # select random from list of results for location
+            # return self.location = ("location", randomselectedlocation)
 
     def create_resource_group(self):
         """Creates the Azure resource group for this deployment."""
         logging.debug("Creating resource group: " + self.resource_group)
         return self.rm_client.resource_groups.create_or_update(
-            self.resource_group,
-            {"location": self.location}
+            self.resource_group, {"location": self.location}
         )
 
     def delete_resource_group(self):
