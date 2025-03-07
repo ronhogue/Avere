@@ -25,9 +25,9 @@ There are multiple video resources to help with learning about burst rendering o
 | Description  | Video Link  |
 |---|---|
 | [Siggraph 2020 Videos](https://siggraph.event.microsoft.com/) - Six videos from Siggraph 2020 review customer solutions and why render on Azure.  | [![Siggraph 2020 Videos](siggraph2020.png)](https://siggraph.event.microsoft.com/)   |
+| [Studio gains 70 percent compute capacity with Azure Virtual Machine Scale Sets, HBv2 virtual machines](https://customers.microsoft.com/en-us/story/1381691411536654967-jellyfish-pictures-media-and-entertainment-azure) - By using Azure ExpressRoute, Virtual Machine Scale Sets, and Avere vFXT for Azure Jellyfish Pictures was able to increase their compute capacity by 70%. | [![Studio gains 70 percent compute capacity with Azure Virtual Machine Scale Sets, HBv2 virtual machines](https://ms-f7-sites-02-cdn.azureedge.net/docs/stories/1381691411536654967-jellyfish-pictures-media-and-entertainment-azure/resources/af18f516-9842-4262-93f0-325e05ce7060/1381765810566389168_1381765810566389168)](https://customers.microsoft.com/en-us/story/1381691411536654967-jellyfish-pictures-media-and-entertainment-azure) |
 | [Securing a custom image](https://youtu.be/CNiQU9qbMDk) - This example shows an Azure administrator how to take an on-prem image, upload it to Azure, and then provide secure access to a contributor.  | [![Tutorial Video](examples/securedimage/renderpilot.png)](https://youtu.be/CNiQU9qbMDk)  |
 | [Avere vFXT in a Proxy Environment](https://youtu.be/lxDDwu44OHM) - This example shows how to configure an Avere vFXT in a secured locked down internet environment where access to outside resources is via a proxy.  | [![Tutorial Video](examples/vfxt/proxy/proxyyoutube.png)](https://youtu.be/lxDDwu44OHM)  |
-| [Making movie magic more affordable](https://customers.microsoft.com/en-us/story/jellyfishpictures) - By using Azure HPC resources, Jellyfish can bid on bigger jobs, better meet deadlines, and reduce capital and labor costs. | [![Making movie magic more affordable](https://ms-f7-sites-01-cdn.azureedge.net/docs/stories/jellyfishpictures/resources/6601324a-047e-488b-bbc5-bad3173f1b0f/1105644140099490900)](https://customers.microsoft.com/en-us/story/jellyfishpictures) |
 | [Visual Effects and Animation Rendering in Azure](https://azure.microsoft.com/en-us/resources/visual-effects-and-animation-rendering-in-azure/) | [Whitepaper](https://azure.microsoft.com/en-us/resources/visual-effects-and-animation-rendering-in-azure/) |
 | [Head-Turning Animation: ‘Bobbleheads: The Movie’ First Feature Completed Remotely on Microsoft Azure Using NVIDIA GPUs](https://blogs.nvidia.com/blog/2020/12/09/bobbleheads-the-movie/) - With post-production struck by the COVID-19 pandemic, Threshold Entertainment and Incessant Rain Studios use the cloud to bring 3D animators and VFX artists together from around the world. | [Blog Link](https://blogs.nvidia.com/blog/2020/12/09/bobbleheads-the-movie/) |
 | [GitOps for Azure Rendering](https://techcommunity.microsoft.com/t5/azure-storage/gitops-for-azure-rendering/ba-p/1326920) | [Blog](https://techcommunity.microsoft.com/t5/azure-storage/gitops-for-azure-rendering/ba-p/132692) |
@@ -44,9 +44,9 @@ The remainder of this page provides Terraform infrastructure examples to build o
 
 The following examples provide end-to-end examples that implement the burst rendering architecture in Linux and Windows environments.
 
-1. [Create a Linux based OpenCue managed render farm on Azure](examples/vfxt/opencue) - deploy an end to end render solution on Azure using OpenCue as your render manager.
-1. [Create a CentOS Custom  Image and scale on Azure](examples/centos) - shows how to create, upload, and deploy a centos custom image and then scale the image using VMSS.
+1. [Create a Linux Render Farm On Azure](examples/centos-e2e) - shows how to create a Linux Render Farm On Azure.
 1. [Create a Windows Render Farm On Azure](examples/houdinienvironment) - this walks through a deployment of a Houdini render environment on Azure.
+1. [Create a Linux based OpenCue managed render farm on Azure](examples/vfxt/opencue) - deploy an end to end render solution on Azure using OpenCue as your render manager.
 1. [Create a multi-region render farm with a Hammerspace global file system on Azure](examples/hammerspace-multi-region) - this walks through a deployment of a Houdini render environment on Azure.
 
 ## Rendering Best Practices for Azure Compute, Network, and Storage
@@ -106,6 +106,11 @@ Both HPC Cache and Avere vFXT for Azure provide file caching for high-performanc
 
 The following terraform examples build out accessory rendering infrastructure such as DNS Servers, high speed NFS ephemeral filers, and a jumpbox:
 
+### VPN
+1. [Azure VPN Gateway to VyOS IPSec Tunnel](examples/vpn-single-tunnel-vyos) - this example is useful for experimenting with building an IPSec tunnel with Azure VPN Gateway.
+1. [WireGuard Multi-tunnel implementation using ECMP on Azure](examples/vpn-multi-tunnel-wireguard) - this example shows how to deploy a WireGuard VPN with multiple tunnels to achieve high throuhput.
+
+
 ### Workstations
 1. [Windows 10 + Nvidia Grid + Teradici PCoIP](examples/windowsgridgpu) - this example deploys Windows 10 + Nvidia Grid + Teradici PCoIP.
 1. [CentOS7 + Gnome + Nvidia Grid + Teradici PCoIP](examples/centosgridgpu) - this example deploys CentOS7 with Gnome + Nvidia Grid + Teradici PCoIP.
@@ -162,10 +167,11 @@ These modules provide core components for use with HPC Cache or Avere vFXT for A
 
 ### Cache Warmer
 
-1. [CacheWarmer Build](modules/cachewarmer_build) - build the cache warmer binaries, and build the bootstrap install directory for the CacheWarmer
-1. [CacheWarmer Manager Install](modules/cachewarmer_manager_install) - install the cachewarmer manager using the bootstrap install directory created by the CacheWarmer build process.
-1. [CacheWarmer Submit Job](modules/cachewarmer_submitjob) - submit the path to warm, and block until it is warmed.
-1. [CacheWarmer Submit Multiple Jobs](modules/cachewarmer_submitmultiplejobs) - submit multiple jobs to the cachewarmer.
+The Cache Warmer is deployed through 4 Terraform modules.  Examples that use these 4 modules are the following:
+* [HPC Cache and CacheWarmer](examples/HPC%20Cache/cachewarmer)
+* [Avere vFXT and CacheWarmer](examples/vfxt/cachewarmer)
+
+A good explanation of each of the modules is described in the [HPC Cache](examples/HPC%20Cache/cachewarmer#cachwarmer-installation) or [vFXT](examples/vfxt/cachewarmer#cachwarmer-installation) documentation.  For Locked down internet environments, customers will manually have to run the shell script of the cachewarmer module.
 
 ## Avere vFXT Terraform Provider
 

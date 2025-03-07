@@ -1,4 +1,4 @@
-# CentOS Pipeline with Terraform 0.15.*
+# CentOS Pipeline with Terraform 1.0.*
 
 These instructions show the pipeline steps to deploy a vFXT on a newly deployed CentOS
 
@@ -15,9 +15,9 @@ Login to the CentOS machine, with the default user, and deploy the tools with th
 sudo yum install -y epel-release
 sudo yum install -y git jq
 # install terraform
-wget https://releases.hashicorp.com/terraform/0.15.0/terraform_0.15.0_linux_amd64.zip
-sudo unzip terraform_0.15.0_linux_amd64.zip -d /usr/local/bin
-rm terraform_0.15.0_linux_amd64.zip
+wget https://releases.hashicorp.com/terraform/1.0.1/terraform_1.0.1_linux_amd64.zip
+sudo unzip terraform_1.0.1_linux_amd64.zip -d /usr/local/bin
+rm terraform_1.0.1_linux_amd64.zip
 # install az cli
 sudo rpm --import https://packages.microsoft.com/keys/microsoft.asc
 echo -e "[azure-cli]
@@ -32,7 +32,7 @@ sudo yum install -y azure-cli
 # install the vfxt released binary from https://github.com/Azure/Avere
 # to build the provider from scratch see: https://github.com/Azure/Avere/tree/main/src/terraform/providers/terraform-provider-avere#build-the-terraform-provider-binary-on-linux
 version=$(curl -s https://api.github.com/repos/Azure/Avere/releases/latest | jq -r .tag_name | sed -e 's/[^0-9]*\([0-9].*\)$/\1/')
-browser_download_url=$(curl -s https://api.github.com/repos/Azure/Avere/releases/latest | jq -r .assets[0].browser_download_url)
+browser_download_url=$(curl -s https://api.github.com/repos/Azure/Avere/releases/latest | jq -r .assets[].browser_download_url | grep -e "terraform-provider-avere$")
 mkdir -p ~/.terraform.d/plugins/registry.terraform.io/hashicorp/avere/$version/linux_amd64
 wget -O ~/.terraform.d/plugins/registry.terraform.io/hashicorp/avere/$version/linux_amd64/terraform-provider-avere_v$version $browser_download_url
 chmod 755 ~/.terraform.d/plugins/registry.terraform.io/hashicorp/avere/$version/linux_amd64/terraform-provider-avere_v$version

@@ -32,12 +32,32 @@ function write_system_files() {
     cp $SRC_FILE $DST_FILE
     sed -i "s/USERREPLACE/$SERVICE_USER/g" $DST_FILE
     sed -i "s/GROUPREPLACE/$SERVICE_USER/g" $DST_FILE
+    sed -i "s:STORAGE_RG_REPLACE:$STORAGE_ACCOUNT_RESOURCE_GROUP:g" $DST_FILE
     sed -i "s/STORAGEACCOUNTREPLACE/$STORAGE_ACCOUNT/g" $DST_FILE
     sed -i "s:STORAGEKEYREPLACE:$STORAGE_KEY:g" $DST_FILE
     sed -i "s:QUEUEPREFIXREPLACE:$QUEUE_PREFIX:g" $DST_FILE
 
     if [ -f '/etc/centos-release' ]; then 
         sed -i "s/chown syslog:adm/chown root:root/g" $DST_FILE
+    fi
+
+    # set the proxy information
+    if [[ -z "${http_proxy}" ]]; then
+        sed -i "s/HTTP_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s#HTTP_PROXY_REPLACE#Environment=\"http_proxy=$http_proxy\"#g" $DST_FILE
+    fi
+
+    if [[ -z "${https_proxy}" ]]; then
+        sed -i "s/HTTPS_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s#HTTPS_PROXY_REPLACE#Environment=\"https_proxy=$https_proxy\"#g" $DST_FILE
+    fi
+
+    if [[ -z "${no_proxy}" ]]; then
+        sed -i "s/NO_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s/NO_PROXY_REPLACE/Environment=\"no_proxy=$no_proxy\"/g" $DST_FILE
     fi
 
     # copy the rsyslog file
@@ -48,6 +68,26 @@ function configure_rsyslog() {
     # enable listen on port 514/TCP
     sed -i 's/^#module(load="imtcp")/module(load="imtcp")/g' /etc/rsyslog.conf
     sed -i 's/^#input(type="imtcp" port="514")/input(type="imtcp" port="514")/g' /etc/rsyslog.conf
+
+    # ensure the logs are rotating
+    if grep -F --quiet "/var/log/cachewarmer-worker.log" /etc/logrotate.d/rsyslog; then
+        echo "not updating /etc/logrotate.d/rsyslog, already there"
+    else
+        /bin/cat <<EOM >>/etc/logrotate.d/rsyslog
+/var/log/cachewarmer-worker.log
+{
+        rotate 2
+        daily
+        missingok
+        notifempty
+        compress
+        postrotate
+                /usr/lib/rsyslog/rsyslog-rotate
+        endscript
+}
+EOM
+    fi
+
     systemctl restart rsyslog
 }
 

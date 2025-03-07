@@ -7,7 +7,6 @@ import (
 	"flag"
 	"fmt"
 	"os"
-	"os/signal"
 	"sync"
 	"time"
 
@@ -40,8 +39,10 @@ func initializeApplicationVariables(ctx context.Context) (*cachewarmer.WarmPathJ
 	var inclusionCsv = flag.String("inclusionCsv", "", "the inclusion list of file match strings per https://golang.org/pkg/path/filepath/#Match.  Leave blank to include everything.")
 	var exclusionCsv = flag.String("exclusionCsv", "", "the exclusion list of file match strings per https://golang.org/pkg/path/filepath/#Match.  Leave blank to not exlude anything.")
 
+	var maxFileSizeBytes = flag.Int64("maxFileSizeBytes", 0, "the maximum file size in bytes to warm.")
+
+	var storageAccountResourceGroup = flag.String("storageAccountResourceGroup", "", "the storage account resource group")
 	var storageAccount = flag.String("storageAccountName", "", "the storage account name to host the queue")
-	var storageKey = flag.String("storageKey", "", "the storage key to access the queue")
 	var queueNamePrefix = flag.String("queueNamePrefix", "", "the queue name to be used for organizing the work. The queues will be created automatically")
 
 	var blockUntilWarm = flag.Bool("blockUntilWarm", false, "the job submitter will not return until there are no more jobs")
@@ -70,14 +71,14 @@ func initializeApplicationVariables(ctx context.Context) (*cachewarmer.WarmPathJ
 		os.Exit(1)
 	}
 
-	if len(*storageAccount) == 0 {
-		fmt.Fprintf(os.Stderr, "ERROR: storageAccount is not specified\n")
+	if len(*storageAccountResourceGroup) == 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: storageAccountResourceGroup is not specified\n")
 		usage()
 		os.Exit(1)
 	}
 
-	if len(*storageKey) == 0 {
-		fmt.Fprintf(os.Stderr, "ERROR: storageKey is not specified\n")
+	if len(*storageAccount) == 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: storageAccount is not specified\n")
 		usage()
 		os.Exit(1)
 	}
@@ -94,17 +95,24 @@ func initializeApplicationVariables(ctx context.Context) (*cachewarmer.WarmPathJ
 		os.Exit(1)
 	}
 
+	primaryKey, err := cachewarmer.GetPrimaryStorageKey(ctx, *storageAccountResourceGroup, *storageAccount)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: unable to get storage account key: %s", err)
+		os.Exit(1)
+	}
+
 	warmJobPath := cachewarmer.InitializeWarmPathJob(
 		*warmTargetMountAddresses,
 		*warmTargetExportPath,
 		*warmTargetPath,
 		*inclusionCsv,
-		*exclusionCsv)
+		*exclusionCsv,
+		*maxFileSizeBytes)
 
 	cacheWarmerQueues, err := cachewarmer.InitializeCacheWarmerQueues(
 		ctx,
 		*storageAccount,
-		*storageKey,
+		primaryKey,
 		*queueNamePrefix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "ERROR: error initializing queue %v\n", err)
@@ -131,7 +139,7 @@ func BlockUntilWarm(ctx context.Context, syncWaitGroup *sync.WaitGroup, cacheWar
 		case <-ticker.C:
 			if time.Since(lastCheckTime) > timeBetweenBlockCheck {
 				lastCheckTime = time.Now()
-				if jobDirectoryEmpty {
+				if !jobDirectoryEmpty {
 					if isEmpty, err := cacheWarmerQueues.IsJobQueueEmpty(); err != nil {
 						log.Error.Printf("error checking if job queue was empty: %v", err)
 					} else if isEmpty == true {
@@ -153,7 +161,7 @@ func BlockUntilWarm(ctx context.Context, syncWaitGroup *sync.WaitGroup, cacheWar
 
 func main() {
 	// setup the shared context
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx := context.Background()
 
 	// initialize the variables
 	warmPathJob, cacheWarmerQueues, blockUntilWarm := initializeApplicationVariables(ctx)
@@ -171,16 +179,6 @@ func main() {
 		syncWaitGroup.Add(1)
 		go BlockUntilWarm(ctx, &syncWaitGroup, cacheWarmerQueues)
 
-		log.Info.Printf("wait for ctrl-c")
-		// wait on ctrl-c
-		sigchan := make(chan os.Signal, 10)
-		// catch all signals will cause cancellation when mounted, we need to
-		// filter out better
-		// signal.Notify(sigchan)
-		signal.Notify(sigchan, os.Interrupt)
-		<-sigchan
-		log.Info.Printf("Received ctrl-c, stopping services...")
-		cancel()
 		log.Info.Printf("Waiting for all processes to finish")
 		syncWaitGroup.Wait()
 	}

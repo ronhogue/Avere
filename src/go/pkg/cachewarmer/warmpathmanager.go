@@ -15,12 +15,13 @@ import (
 
 	"github.com/Azure/Avere/src/go/pkg/log"
 	"github.com/Azure/Avere/src/go/pkg/stats"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/profiles/2020-09-01/compute/mgmt/compute"
 )
 
 // WarmPathManager contains the information for the manager
 type WarmPathManager struct {
 	AzureClients          *AzureClients
+	WorkerCount           int64
 	Queues                *CacheWarmerQueues
 	bootstrapMountAddress string
 	bootstrapExportPath   string
@@ -37,6 +38,7 @@ type WarmPathManager struct {
 // InitializeWarmPathManager initializes the job submitter structure
 func InitializeWarmPathManager(
 	azureClients *AzureClients,
+	workerCount int64,
 	queues *CacheWarmerQueues,
 	bootstrapMountAddress string,
 	bootstrapExportPath string,
@@ -50,6 +52,7 @@ func InitializeWarmPathManager(
 	queueNamePrefix string) *WarmPathManager {
 	return &WarmPathManager{
 		AzureClients:          azureClients,
+		WorkerCount:           workerCount,
 		Queues:                queues,
 		bootstrapMountAddress: bootstrapMountAddress,
 		bootstrapExportPath:   bootstrapExportPath,
@@ -172,7 +175,7 @@ func (m *WarmPathManager) processJob(ctx context.Context, warmPathJob *WarmPathJ
 					end = fileSize
 				}
 				log.Info.Printf("queuing worker job for file %s [%d,%d)", fullPath, i, end)
-				workerJob := InitializeWorkerJobForLargeFile(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, fullPath, i, end, warmPathJob.InclusionList, warmPathJob.ExclusionList)
+				workerJob := InitializeWorkerJobForLargeFile(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, fullPath, i, end, warmPathJob.InclusionList, warmPathJob.ExclusionList, warmPathJob.MaxFileSizeBytes)
 				if err := m.Queues.WriteWorkerJob(workerJob); err != nil {
 					log.Error.Printf("error encountered writing worker job '%s': %v", fullPath, err)
 				}
@@ -183,7 +186,7 @@ func (m *WarmPathManager) processJob(ctx context.Context, warmPathJob *WarmPathJ
 		if len(files) > 0 {
 			if len(files) < MaximumFilesToRead {
 				log.Info.Printf("queuing job for path %s", warmFolder)
-				workerJob := InitializeWorkerJob(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, warmFolder, warmPathJob.InclusionList, warmPathJob.ExclusionList)
+				workerJob := InitializeWorkerJob(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, warmFolder, warmPathJob.InclusionList, warmPathJob.ExclusionList, warmPathJob.MaxFileSizeBytes)
 				if err := m.Queues.WriteWorkerJob(workerJob); err != nil {
 					log.Error.Printf("error encountered writing worker job '%s': %v", warmFolder, err)
 				}
@@ -194,7 +197,7 @@ func (m *WarmPathManager) processJob(ctx context.Context, warmPathJob *WarmPathJ
 						end = len(files) - 1
 					}
 					log.Info.Printf("queuing job for path %s [%s,%s]", warmFolder, files[i].Name(), files[end].Name())
-					workerJob := InitializeWorkerJobWithFilter(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, warmFolder, files[i].Name(), files[end].Name(), warmPathJob.InclusionList, warmPathJob.ExclusionList)
+					workerJob := InitializeWorkerJobWithFilter(warmPathJob.WarmTargetMountAddresses, warmPathJob.WarmTargetExportPath, warmFolder, files[i].Name(), files[end].Name(), warmPathJob.InclusionList, warmPathJob.ExclusionList, warmPathJob.MaxFileSizeBytes)
 					if err := m.Queues.WriteWorkerJob(workerJob); err != nil {
 						log.Error.Printf("error encountered writing worker job %s [%s,%s]: %v", warmFolder, files[i].Name(), files[end].Name(), err)
 					}
@@ -222,7 +225,7 @@ func processDirEntries(dirEntries []os.FileInfo, warmPathJob *WarmPathJob) ([]os
 		if dirEntry.IsDir() {
 			dirs = append(dirs, dirEntry)
 		} else { /* !dirEntry.IsDir() */
-			if !warmPathJob.FileMatches(dirEntry.Name()) {
+			if !warmPathJob.FileMatches(dirEntry.Name(), dirEntry.Size()) {
 				continue
 			}
 			fileSizes = append(fileSizes, dirEntry.Size())
@@ -310,8 +313,7 @@ func (m *WarmPathManager) RunVMSSManager(ctx context.Context, syncWaitGroup *syn
 					if workerJob == nil {
 						continue
 					}
-					mountCount := len(workerJob.WarmTargetMountAddresses)
-					m.EnsureVmssRunning(ctx, mountCount)
+					m.EnsureVmssRunning(ctx)
 					lastJobSeen = time.Now()
 				}
 				lastReadQueueSuccess = time.Now()
@@ -320,7 +322,7 @@ func (m *WarmPathManager) RunVMSSManager(ctx context.Context, syncWaitGroup *syn
 	}
 }
 
-func (m *WarmPathManager) EnsureVmssRunning(ctx context.Context, mountCount int) {
+func (m *WarmPathManager) EnsureVmssRunning(ctx context.Context) {
 	vmssExists, err := VmssExists(ctx, m.AzureClients, VmssName)
 	if err != nil {
 		log.Error.Printf("checking VMSS existence failed with error %v", err)
@@ -342,7 +344,24 @@ func (m *WarmPathManager) EnsureVmssRunning(ctx context.Context, mountCount int)
 		vmssSubnetId = SwapResourceName(localVMSubnetId, m.vmssSubnet)
 	}
 
+	// get proxy information and pass on to worker
+	httpProxyStr := ""
+	if e := os.Getenv("http_proxy"); len(e) > 0 {
+		httpProxyStr = fmt.Sprintf("http_proxy=%s", e)
+	}
+	httpsProxyStr := ""
+	if e := os.Getenv("https_proxy"); len(e) > 0 {
+		httpProxyStr = fmt.Sprintf("https_proxy=%s", e)
+	}
+	noProxyStr := ""
+	if e := os.Getenv("no_proxy"); len(e) > 0 {
+		noProxyStr = fmt.Sprintf("no_proxy=%s", e)
+	}
+
 	cacheWarmerCloudInit := InitializeCloutInit(
+		httpProxyStr,            // httpProxyStr string,
+		httpsProxyStr,           // httpsProxyStr string,
+		noProxyStr,              // noProxyStr string,
 		m.bootstrapMountAddress, // bootstrapAddress string,
 		m.bootstrapExportPath,   // exportPath string,
 		m.bootstrapScriptPath,   // bootstrapScriptPath string,
@@ -357,26 +376,27 @@ func (m *WarmPathManager) EnsureVmssRunning(ctx context.Context, mountCount int)
 		return
 	}
 
-	vmssCount := int64(mountCount * NodesPerNFSMountAddress)
-
 	cacheWarmerVmss := createCacheWarmerVmssModel(
 		VmssName,                              // vmssName string,
 		m.AzureClients.LocalMetadata.Location, // location string,
 		VMSSNodeSize,                          // vmssSKU string,
-		vmssCount,                             // nodeCount int64,
+		m.WorkerCount,                         // nodeCount int64,
 		m.vmssUserName,                        // userName string,
 		m.vmssPassword,                        // password string,
 		m.vmssSshPublicKey,                    // sshKeyData string,
 		MarketPlacePublisher,                  // publisher string,
 		MarketPlaceOffer,                      // offer string,
 		MarketPlaceSku,                        // sku string,
+		PlanName,                              // planName string,
+		PlanPublisherName,                     // planPublisherName string,
+		PlanProductName,                       // planProductName string,
 		compute.Spot,                          // priority compute.VirtualMachinePriorityTypes,
 		compute.Delete,                        // evictionPolicy compute.VirtualMachineEvictionPolicyTypes
 		vmssSubnetId,                          // subnetId string
 		customData,
 	)
 
-	log.Info.Printf("create VMSS with %d workers", vmssCount)
+	log.Info.Printf("create VMSS with %d workers", m.WorkerCount)
 	if _, err := CreateVmss(ctx, m.AzureClients, cacheWarmerVmss); err != nil {
 		log.Error.Printf("error creating vmss: %v", err)
 		return

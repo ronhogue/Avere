@@ -24,22 +24,31 @@ These instructions work on Centos 7 (systemd) and Ubuntu 18.04.  This can be ins
 2. If not already installed go, install golang:
 
     ```bash
-    wget https://dl.google.com/go/go1.11.2.linux-amd64.tar.gz
-    tar xvf go1.11.2.linux-amd64.tar.gz
-    sudo chown -R root:root ./go
-    sudo mv go /usr/local
-    mkdir ~/gopath
-    echo "export GOPATH=$HOME/gopath" >> ~/.profile
-    echo "export PATH=$PATH:/usr/local/go/bin:$GOPATH/bin" >> ~/.profile
-    source ~/.profile
-    rm go1.11.2.linux-amd64.tar.gz
+    GO_DL_FILE=go1.16.6.linux-amd64.tar.gz
+    wget --tries=12 --wait=5 https://dl.google.com/go/$GO_DL_FILE
+    sudo tar -C /usr/local -xzf $GO_DL_FILE
+    rm -f $GO_DL_FILE
+    echo "export PATH=$PATH:/usr/local/go/bin" >> $HOME/.profile
+    source $HOME/.profile
     ```
 
 2. setup CacheWarmer code
     ```bash
-    # checkout CacheWarmer code, all dependencies and build the binaries
-    cd $GOPATH
-    go get -v github.com/Azure/Avere/src/go/...
+    # checkout and build CacheWarmer
+    cd
+    RELEASE_DIR=$HOME/release
+    mkdir -p $RELEASE_DIR
+    git clone https://github.com/Azure/Avere.git
+    # build the cache warmer
+    cd $HOME/Avere/src/go/cmd/cachewarmer/cachewarmer-jobsubmitter
+    go build
+    mv cachewarmer-jobsubmitter $RELEASE_DIR/.
+    cd $HOME/Avere/src/go/cmd/cachewarmer/cachewarmer-manager
+    go build
+    mv cachewarmer-manager $RELEASE_DIR/.
+    cd $HOME/Avere/src/go/cmd/cachewarmer/cachewarmer-worker
+    go build
+    mv cachewarmer-worker $RELEASE_DIR/.
     ```
 
 ### Mount NFS and build a bootstrap directory
@@ -95,8 +104,8 @@ On the controller or jumpbox, execute the following steps
 ```bash
 export BOOTSTRAP_PATH=/nfs/node0
 
+export STORAGE_ACCOUNT_RESOURCE_GROUP=
 export STORAGE_ACCOUNT=
-export STORAGE_KEY=''
 export QUEUE_PREFIX=
 
 export BOOTSTRAP_EXPORT_PATH=/nfs1data
@@ -127,6 +136,7 @@ export STORAGE_ACCOUNT=
 export STORAGE_KEY=''
 export QUEUE_PREFIX=
 ```
+
 2. Run the following script:
 ```bash
 bash /nfs/node0/bootstrap/bootstrap.cachewarmer-worker.sh
@@ -137,5 +147,5 @@ bash /nfs/node0/bootstrap/bootstrap.cachewarmer-worker.sh
 To submit a job, run a command similar to the following command, where the warm target variables are the Avere junction to warm:
 
 ```bash
-sudo /usr/local/bin/cachewarmer-jobsubmitter -enableDebugging -storageAccountName "STORAGEACCOUNTREPLACE" -storageKey "STORAGEKEYREPLACE" -queueNamePrefix "QUEUEPREFIXREPLACE" -warmTargetExportPath "/nfs1data" -warmTargetMountAddresses "10.0.1.11,10.0.1.12,10.0.1.13" -warmTargetPath "/island"
+sudo /usr/local/bin/cachewarmer-jobsubmitter -enableDebugging -storageAccountResourceGroup "STORAGERGREPLACE" -storageAccountName "STORAGEACCOUNTREPLACE" -queueNamePrefix "QUEUEPREFIXREPLACE" -warmTargetExportPath "/nfs1data" -warmTargetMountAddresses "10.0.1.11,10.0.1.12,10.0.1.13" -warmTargetPath "/island"
 ```

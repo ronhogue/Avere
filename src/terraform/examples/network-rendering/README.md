@@ -25,7 +25,7 @@ For lowest TCO:
 
 Pitfalls to avoid:
 * after VPN is setup, the MTU will need to be set according to this '[important note](https://docs.microsoft.com/en-gb/azure/vpn-gateway/vpn-gateway-about-vpn-devices#ipsec)'.  There are two recommended solutions:
-    1. **Clamp TCP MSS at 1350** – this is done using your firewall rules on the firewall.  For a concrete example, here is the configuration for fortinet: search for string ‘set tcp-mss-sender 1350’ in the following article for how to do this: https://cookbook.fortinet.com/ipsec-vpn-microsoft-azure-56/.  Other [configuration guides can be found in the device configuration guides](https://docs.microsoft.com/en-gb/azure/vpn-gateway/vpn-gateway-about-vpn-devices#devicetable).
+    1. **Clamp TCP MSS at 1350** – this is done using your firewall rules on the firewall.  For a concrete example, here is the configuration for fortinet: search for string ‘set tcp-mss-sender 1350’ in the following article for how to do this: https://docs.fortinet.com/document/fortigate/6.2.2/cookbook/255100/ipsec-vpn-to-azure.  Other [configuration guides can be found in the device configuration guides](https://docs.microsoft.com/en-gb/azure/vpn-gateway/vpn-gateway-about-vpn-devices#devicetable).
     1. 	**Or alternatively, set MTU to 1400 on the Azure Side** – this will need to be done in two places:
 	    1. **Render VM Custom Image** – add the line `MTU=1400` to `/etc/sysconfig/network-scripts/ifcfg-eth0`
 		1. **Avere** – this is done by either browsing to the VLANS page in the web ui something under `/avere/fxt/vlans.php` (manually adding `/avere/fxt/vlans.php` to Avere web UI) or executing the following line on one of the Avere vFXT nodes:
@@ -66,7 +66,9 @@ The [Azure ExpressRoute](https://azure.microsoft.com/en-us/services/expressroute
     1. (ongoing cost, fast failover) use S2S VPN as a backup for [ExpressRoute private peering](https://docs.microsoft.com/en-us/azure/expressroute/use-s2s-vpn-as-backup-for-expressroute-privatepeering).  Here is an additional article on how you to have an [ExpressRoute co-exist with a VPN gateway](https://docs.microsoft.com/en-us/azure/expressroute/expressroute-howto-coexist-resource-manager).
 
 ### Ensuring for security:
-* To ensure your ExpressRoute connection is encrypted end-to-end, consider configuring [IPsec over ExpressRoute for Virtual WAN](https://docs.microsoft.com/en-us/azure/virtual-wan/vpn-over-expressroute).
+* To ensure your ExpressRoute connection is encrypted end-to-end, there are two approaches:
+    1. configuring [IPsec over ExpressRoute for Virtual WAN](https://docs.microsoft.com/en-us/azure/virtual-wan/vpn-over-expressroute).
+    1. setup wireguard end to end.  Here is our [WireGuard to WireGuard](../vpn-multi-tunnel-wireguard) implementation, but since this is over ExpressRoute with low latency and few hops, you would only need a single tunnel.  (credit to Raymond Gumti for this recommendation!)
 
 ## Troubleshooting network speeds
 

@@ -1,5 +1,5 @@
 {
-  "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+  "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
   "contentVersion": "1.0.0.0",
   "parameters": {
     "location": {
@@ -33,6 +33,13 @@
         "description": "The unique name used for the virtual network. If createVirtualNetwork is set to true, you may reuse the unique name above."
       }
     },
+    "userAdminClusterRoleUUID": {
+      "type": "string",
+      "defaultValue": "18d7d88d-d35e-4fb5-a5c3-7773c20a72d9",
+      "metadata": {
+        "description": "UUID for the userAdminClusterRole"
+      }
+    },
     "virtualNetworkSubnetName": {
       "type": "string",
       "metadata": {
@@ -45,6 +52,13 @@
         "description": "Virtual network address space prefix used when creating a virtual network with this deployment. E.g. 192.168.0.0/16"
       },
       "defaultValue": "10.0.0.0/16"
+    },
+    "controllerVMSize": {
+      "type": "string",
+      "defaultValue": "Standard_A1_v2",
+      "metadata": {
+        "description": "Size of controller VM"
+      }
     },
     "subnetAddressRangePrefix":{
       "type": "string",
@@ -173,6 +187,13 @@
         "description": "The Azure role assignment unique id.  If blank, vmname is used."
       }
     },
+    "vnetAssignRoleName": {
+      "type": "string",
+      "defaultValue": "vnetAssignRole",
+      "metadata": {
+        "description": "Name of the role with vnet assign permissions"
+      }
+    },
     "controllerMarketplaceOffer": {
       "type": "string",
       "defaultValue": "vfxt",
@@ -225,7 +246,6 @@
     "controllerPassword": "[parameters('controllerPassword')]",
     "controllerSSHKeyData": "[parameters('controllerSSHKeyData')]",
     "adminPassword": "[parameters('adminPassword')]",
-    "avereCreateClusterRoleFullyQualifiedId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/', parameters('avereCreateClusterRoleId'))]",
     "avereClusterRole": "[parameters('avereClusterRole')]",
     "avereClusterName": "[parameters('avereClusterName')]",
     "avereInstanceType": "[parameters('avereInstanceType')]",
@@ -236,13 +256,12 @@
 
     "nicName": "[concat('vmnic-',variables('controllerName'))]",
     "createRoleAssignmentId": "[guid(concat(variables('rbacRoleAssignmentUniqueId'), '-createrole'))]",
-    "userAdminClusterRoleFullyQualifiedId": "[concat('/subscriptions/', subscription().subscriptionId, '/providers/Microsoft.Authorization/roleDefinitions/18d7d88d-d35e-4fb5-a5c3-7773c20a72d9')]",
     "userAdminRoleAssignmentId": "[guid(concat(variables('rbacRoleAssignmentUniqueId'), '-useradmin'))]",
+    "vnetAssignRoleDeployment": "[concat('Microsoft.Resources/deployments/', parameters('vnetAssignRoleName'))]",
     "createVNETRoleAssignmentId": "[guid(concat(variables('rbacRoleAssignmentUniqueId'), '-createvnetrole'))]",
+    "createVNETRoleAssignmentIdRoleAssignment": "[concat('Microsoft.Authorization/roleAssignments/', variables('createVNETRoleAssignmentId'))]",
     "byonetUserAdminRoleAssignmentId": "[guid(concat(variables('rbacRoleAssignmentUniqueId'), '-byovnetuseradmin'))]",
-    "vnetAssignRoleName": "vnetAssignRole",
     "additionalVFXTParameters": "[concat(' --nodes ', variables('avereNodeCount'), if(variables('enableCloudTraceDebugging'),' --skip-cleanup ',''), ' --debug')]",
-    "controllerVMSize": "Standard_A1_v2",
     "publicIPAddressName": "[concat('publicip-',variables('controllerName'))]",
     "networkSecurityGroupName": "[concat('nsg-',variables('controllerName'))]",
     "subnetId": "[resourceId(variables('virtualNetworkResourceGroup'), 'Microsoft.Network/virtualNetworks/subnets', variables('virtualNetworkName'), variables('virtualNetworkSubnetName'))]",
@@ -251,8 +270,8 @@
     "pipObject": {
       "id": "[resourceId('Microsoft.Network/publicIPAddresses',variables('publicIPAddressName'))]"
     },
-    "createNic?": true,
-    "useExtension?": true,
+    "createNic": true,
+    "useExtension": true,
     "storageAccountType": "Standard_LRS",
     "storageAccountKind": "StorageV2",
     "environmentVariables": "[concat(' SUBSCRIPTION_ID=', subscription().subscriptionId,' RESOURCE_GROUP=', resourceGroup().name, ' LOCATION=', variables('location'), ' NETWORK_RESOURCE_GROUP=', variables('virtualNetworkResourceGroup'), ' NETWORK=', variables('virtualNetworkName'),' SUBNET=', variables('virtualNetworkSubnetName'), ' AVERE_CLUSTER_ROLE=\"', variables('avereClusterRole'), '\" CREATE_CLOUD_BACKED_CLUSTER=', variables('useAvereBackedStorageAccount'), ' STORAGE_ACCOUNT=', variables('avereBackedStorageAccountName'), ' CACHE_SIZE=', variables('avereCacheSizeGB'), ' CLUSTER_NAME=', variables('avereClusterName'), ' INSTANCE_TYPE=', variables('avereInstanceType'), ' CONTROLLER_ADMIN_USER_NAME=', variables('controllerAdminUsername'),' ENABLE_CLOUD_TRACE_DEBUG=', variables('enableCloudTraceDebugging'),' BUILD_CONTROLLER=', variables('buildController'), ' DEBUG=\"', variables('additionalVFXTParameters'), '\" ', if(greater(length(parameters('nodeImageId')), 0), concat(' IMAGE_ID_VALUE=\"', parameters('nodeImageId'), '\"'), ''))]",
@@ -261,12 +280,12 @@
       "computerName": "[variables('vmName')]",
       "adminUsername": "[variables('controllerAdminUsername')]",
       "adminPassword": "[variables('controllerPassword')]",
-      "customData": "[base64('#cloud-config\n\nwrite_files:\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/installvfxt.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        H4sIAAAAAAAC/81X/2/aRhT/3X/Fq+sKUOJAVu2HJUIVCyRFghABbbe1nXXYZzjV9rl355CI8b/v3dkYQ6Bdu02bKzX2u/f1877c4/mz5owlzRmRC8t6/v2Phf/gHVH+Au7DB3UW8TmQJACakFlEwY94FoASxKdAQkUFqAVFiZgkZE5jmijo3wGTIKhP2T0NTo10wORhcRRFBSB9wVIFCyIhZAmTCxqcAUzxJM1EyiUFHu4IM4mSIRdAgoApxhMSQUBn2XzOkjmwBI9ioukQZCInSUWiyNDOTJC9RGYCXeJxGlHDOnsEqXiaGv7QOFZiEDJ0P+BU2024ArngS8hSQBcK1qqFTUBanTQQoFipy1BhRrWdLA2Iwmi1S38ja6he0JQLBegCRCyhuVmgD0wBOkSF4MKSVIH7YBnUMUmFl0uGMgvkxhC1OFMy50cdkmPUSQ1D0aI61cWL1fntzbjnvR4Ne163P243FzymTedqdDsdjwaD3tjrdIf9W+/NBF9vO8Oe9fb6l6k3GN141/1Br+3syjc36FjvOv2pN+mhou6k/bLVssZ3V17vtvMzCtl5GdqG1u1PcmJRXbZlhVni5/jTJECeegNWFuCjnT55MK8sxZoRVMq2c34JxPC3nR8sc9h52xv3robdtk3uKdZwHIDrCrLE/xPu+gvqf3J9KhQLmY95Q3Imqa7CmCX4kRIpl1wE4OTB33Umk3ejcRePkA01glOat3NvQngPtpO7YUO7jR/bgG34CJe6uhLDrB/qLzjYOj6oySzVOT8jvk9TNaUilvBIZQ0UB2dVWlrbpbSzCRCOyJacKJhFqu28sg6Zdla5x+tvMRXzgIWPYK9qpokH9J5GtQuotR56reI5b7Vqp1ATPMIank81m+bQQSEZG0zJIU+Y4qJCjmnMxWN30/6bk4ovm2Dq9fztxHnVaJhTGh3LQFFeX07BP4zD+aHgE34o9px6IHQ8OBD5qyJaSffC6I3Ho/EFzEhQ9MIT2XNDCJlVdpKbd5KgKhMJODmfta70n+kUb0EinG2ebu2yExO+xDzooQcnL2Sj0B3RWLGY4omOE1wfXvwKzs7EyFkRuRAbM/E1b91Bba5Tihc5LTK6ZbXBnSukVEfL0bxed6adwYUZ6eXgd1Y7rqzNTZVHt4XLjNoSrCoaS8KUQcFDjSUSPs8SvALbLfO1XGhD7+EZuOFe5PDxEodwaUdGlKaFoaoexKN4hRM4L7Ao8XA2Z+4c46kiodXv4LDFwgRf24++hlkIzC1I0pQSUWwCzqqqdY2V4vMkkPau3i1IBVAmqzyhTxHbLhUeS0vYcqAuCrltkNuxXqdzvAzB/n1Dqb9vuT99XJ2fvlx/OGusXq633/bT3P4BZPkJaqtYb0F1p3XaNOwnH84O/202LtE6tLG/Z1IJLTGeTDvj6el40Lu9mb7G8xSXEIVc69peWmxn9bwyNfJCbWFxlmxHUnN42OhnJij5tI+wKZT9pjxYUodzUaxJ1IvRIGblq+kIwSTBdT9nDEeGre1d9G+vR+DCVaHsKfhHK1GLm67bOBLsLFxfQsCM+APOmMmH3lwTjCDQA9xHOaW31ExiQX+rdzsLYGiU/ruJyZchz+zFnrlKyqxUlxxr66cSj3rpxFAP7PO29aWE6gUTxfXSTfUig8OERbCkSCb4Y0GPy3ge6xrXO/HO7mz23WplFNtZZRmCytIDR2HeyMkMlxYpv4LuX4b3xy28Fayq0ORoYTqr8Bdr5/fhf+gX0X+fgGLn+R9moMBrLwUxYUmJeS6kp5X5ZWh6srzBEfL8sspd3rmRc5vDm+HU69/h9fH08mkUbj1pOHAKMWurdn9UWsXiIo8LY0w6lD8BeDh9ccUPAAA=\n    path: /opt/avere/enablecloudtrace.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/python_requirements.txt\n    permissions: \"0744\"\n\n')]"
+      "customData": "[base64('#cloud-config\n\nwrite_files:\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/installvfxt.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        H4sIAAAAAAAC/81X/2/aRhT/3X/Fq+sKUOJAVu2HJUIVCyRFghABbbe1nXXYZzjV9rl355CI8b/v3dkYQ6Bdu02bKzX2u/f1877c4/mz5owlzRmRC8t6/v2Phf/gHVH+Au7DB3UW8TmQJACakFlEwY94FoASxKdAQkUFqAVFiZgkZE5jmijo3wGTIKhP2T0NTo10wORhcRRFBSB9wVIFCyIhZAmTCxqcAUzxJM1EyiUFHu4IM4mSIRdAgoApxhMSQUBn2XzOkjmwBI9ioukQZCInSUWiyNDOTJC9RGYCXeJxGlHDOnsEqXiaGv7QOFZiEDJ0P+BU2024ArngS8hSQBcK1qqFTUBanTQQoFipy1BhRrWdLA2Iwmi1S38ja6he0JQLBegCRCyhuVmgD0wBOkSF4MKSVIH7YBnUMUmFl0uGMgvkxhC1OFMy50cdkmPUSQ1D0aI61cWL1fntzbjnvR4Ne163P243FzymTedqdDsdjwaD3tjrdIf9W+/NBF9vO8Oe9fb6l6k3GN141/1Br+3syjc36FjvOv2pN+mhou6k/bLVssZ3V17vtvMzCtl5GdqG1u1PcmJRXbZlhVni5/jTJECeegNWFuCjnT55MK8sxZoRVMq2c34JxPC3nR8sc9h52xv3robdtk3uKdZwHIDrCrLE/xPu+gvqf3J9KhQLmY95Q3Imqa7CmCX4kRIpl1wE4OTB33Umk3ejcRePkA01glOat3NvQngPtpO7YUO7jR/bgG34CJe6uhLDrB/qLzjYOj6oySzVOT8jvk9TNaUilvBIZQ0UB2dVWlrbpbSzCRCOyJacKJhFqu28sg6Zdla5x+tvMRXzgIWPYK9qpokH9J5GtQuotR56reI5b7Vqp1ATPMIank81m+bQQSEZG0zJIU+Y4qJCjmnMxWN30/6bk4ovm2Dq9fztxHnVaJhTGh3LQFFeX07BP4zD+aHgE34o9px6IHQ8OBD5qyJaSffC6I3Ho/EFzEhQ9MIT2XNDCJlVdpKbd5KgKhMJODmfta70n+kUb0EinG2ebu2yExO+xDzooQcnL2Sj0B3RWLGY4omOE1wfXvwKzs7EyFkRuRAbM/E1b91Bba5Tihc5LTK6ZbXBnSukVEfL0bxed6adwYUZ6eXgd1Y7rqzNTZVHt4XLjNoSrCoaS8KUQcFDjSUSPs8SvALbLfO1XGhD7+EZuOFe5PDxEodwaUdGlKaFoaoexKN4hRM4L7Ao8XA2Z+4c46kiodXv4LDFwgRf24++hlkIzC1I0pQSUWwCzqqqdY2V4vMkkPau3i1IBVAmqzyhTxHbLhUeS0vYcqAuCrltkNuxXqdzvAzB/n1Dqb9vuT99XJ2fvlx/OGusXq633/bT3P4BZPkJaqtYb0F1p3XaNOwnH84O/202LtE6tLG/Z1IJLTGeTDvj6el40Lu9mb7G8xSXEIVc69peWmxn9bwyNfJCbWFxlmxHUnN42OhnJij5tI+wKZT9pjxYUodzUaxJ1IvRIGblq+kIwSTBdT9nDEeGre1d9G+vR+DCVaHsKfhHK1GLm67bOBLsLFxfQsCM+APOmMmH3lwTjCDQA9xHOaW31ExiQX+rdzsLYGiU/ruJyZchz+zFnrlKyqxUlxxr66cSj3rpxFAP7PO29aWE6gUTxfXSTfUig8OERbCkSCb4Y0GPy3ge6xrXO/HO7mz23WplFNtZZRmCytIDR2HeyMkMlxYpv4LuX4b3xy28Fayq0ORoYTqr8Bdr5/fhf+gX0X+fgGLn+R9moMBrLwUxYUmJeS6kp5X5ZWh6srzBEfL8sspd3rmRc5vDm+HU69/h9fH08mkUbj1pOHAKMWurdn9UWsXiIo8LY0w6lD8BeDh9ccUPAAA=\n    path: /opt/avere/enablecloudtrace.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/python_requirements.txt\n    permissions: \"0744\"\n\n')]"
     },
     "controllerOSProfileSSHKey": {
       "computername": "[variables('vmName')]",
       "adminUsername": "[variables('controllerAdminUsername')]",
-      "customData": "[base64('#cloud-config\n\nwrite_files:\n -  encoding: gzip\n    content: !!binary |\n        H4sIAAAAAAAC/60Za3PaxvY7v2IDmsR2IgRuc3tvMrQlWEmZYvAATm9bp6qQFtiJ2FW0KzBJ09/ec1YPJJCJk9RthpV09ux5v7bxwJoxbs1cuazVGiSioYgUcYOABIxT+YS43Cf0likiOKFRJKKapIqYt8kPrdW640tnOr62O/VpFNN67Zduf+pM7N5oeDHp/KfVqnV/ux7bzk+jS9u56I871lKsqGXA9+l4NBjYY6d7cdkfOtcTWA67l3bt9cv/T53+cDLtDgbO1L68GnSndsco47HW81vFuFRAa603GF1fOC+6vZ/ti90Oy4uoq6jpBSL2Z673lvqwjqWiUQ1O7F92B4fAK8bZyg1yQE3MYPTKedkfVBPRDMRCS8EeXlyN+sNpZ6lUKJ9Z1srl7oKuKFdN930c0aYnVtaKKtd3lWtR7oeCcSV/cENmrmkkmeCd81b7O7N9brbatdo85p6Cl6AWFW29le+wuTN3WQC4Tk7JhxqBP9TDY6qXCMao7Bjt52TjMuXIgNKwY5w/J3LJ5oo8fJgsNPRcRIQRxolxIuk70iZGuv/0OfGFBsE/48OPH/OH34nxA2j9HWkR8gbRzUBqb8lff5GbHIbNEYxpsAwlefOcqCXlORD+UW8piH1LvVhRn9zUjR9v6rhRsRWVz0ugqbEVXwHmOOKknb+kgSxDaO6JsZNE/nXO9NIXnNb20H+CqI8FrWjEWrEO2rTjsyjXiidiDubTaemnzZIFFKTygJg+2bMhFE1B3AnRO64yRMbJSbokj0n79HRP3Nk3c0GJUXTBuyVfB3qpp0S0PSCJC4gBazA0dwZ0u3PEjNwyvtjDLqknuC/rZfQYL9qV0j6UX7RyMk/IpdcglEuQK1JOAIJkEIRJULzrLZGwFDTzNl94srliXiSkmCvta5SbsbS0iqw1i1QMjr2C3RjarA3jvthISwcR7oHrp55pShqtmUcbC6qQZVMjMCkHFIKjO5ubJYU3QJ25XplMmlHMOUDWUoU8qPJYcv4teUq8OAqIuYKVKYjl07XFY4i2RjGAkD2VJeriApwVNMGpelAWSnkzKi+XUZOQq4C6koKmaC6qBVPLeKZF1NXC6UL4oZaKKIWgBflARp6ObY3sRNP1PColZoGl2BAlwDD5nC2QrznY0QbC8BPic8gYEFbCSNxumzujKBgEGEOFDzkQQxl3INk4azitYAgIoEPVGMI7caVkC60CiTTMwDrCMGDUT6FjDqAq5hDJg+0TbT6H+9y3FAB9CpxBtAcvR98moSsVbmARQguPuRgAIipFHHkU2F2FAUWa85M1Tuo3j2u9fd4CZbvviWaRmCbzgQymttVavuwOu6/sC9K/sIfT/vRX8rLbH4BzPiOIEIkVKaayW7ZbBJiBoCWRbXAT+D/JPz7JT5zFi7uU8gkeEhbACDDOJPHSlPFMehELtSKNyfWLSW/cv5r2R0Onf/Hl3CHyIuovpDiVOljTRkRvCZoVosWfgIGqTQhlQ3v6y2j8szO2J6Prcc92Xo1H11fAGkKb3AWzyGCq+dHG1Z1M+q+Gl8BRpbLwMH36pxUWQZVSsNVj+io6Ue6KDvqsoyiYKlhv7kU6RdSN3tiGSscpFUu9wfVkao/rpNMBiKyWqx9kDQ8SaWWVRYzKcq12kJERw37VdWwz8Jg5dQhROckFSThyA7J2I4bxTab52ycmI4+k9UdZlVZj73nx6NiZBTyDUa+Lpmw18tW996YmYzWyxb13ghPBHquR/t57X/e1PbYzZTpQV9tWo+Ld/emYjsbgqE631xtdD5GgvRf3xtTr9n6ynUn/N6CosL7//pR+7AwAQ/Hp/tLRDcYV+Clo4wIkU36+Nx79fQi2NP31CogpPx7HolurwIVEUjfNeSRWxXKiTjaQkPGL4GZWjtSJZPBDNlgBQcKSWX2xI4gcoiL4soCF3I+7unz2d97MPDNKTc+zRZ0cZ80XuuhQEfIHeVRCxPWxswBkTwiSQl1f+y9k0RV2lBDrPDeEAp5quDmWx3+nLZiTtl5OCtzUWLSEctyeiLB2DbYgVt/1VFoA5NxYfyQl/W1sJYvYOsJFKZYmNKAsdlXIl/0dk478asRpG/41aJJO5aAjyUtwXf3r7jml3o8jTF1p2+2iwIoJ5oM97L4YZBlmOu6Cb1zYL65ffUzzy4cswcCLN/sZlYtlHJJ8HEEsESrL1YVpQoqmRBPShM/f75N9CAWGQ86/f9gmD4s1Q6m5SNRNUpMr2ifYF+gJDAqLTwSdx2ivtV2Tdo4NcCiJ6YIisJyHGoT8RegCXJ08+n39Bv0p3D6Cd9oywWNN0/Uh65u5If/+B3lzdvj67OzMegQs3u0RKU93WPS/YLa649EWgMLMgs/XWuzjr7PYoqeGYIsqqXigGpC5tyaV2euJPYYE6PSvJh0ccEBg4DowNM96KFS04zU2eqD17Pfk5qR5dnN6Y50/fdos/DttnhnWTdsK66QcGk/rhRMvX12CJq72T9sNgYjr+9BPyGckOeculEUm/XgVQn+8rmIRnDBSYMxrDVUgxTgJN/5pAZLe6rFeuRbqGOXn+uGGrPTpGNmqAqi6iO7cUVzfjSDfUQGS1EMdI/mtADgsdjrG4buKjUeK4s7RirmCyHKNBNSWX1SdnldEcFi+rgIsFD4AWniqAC4VJh2j9Fglu1I5BHIrPRc3zBlnEHp3Jlc0VcjnzoIqJynXj80n28lUDDckwI6IVRirjqVWoQWvTcBjJp+a8OlzxpXYy8MW8k2rRVJMWQOBqeATk8zPH2LedzKZ5oxvWkeHkI+rhpB7bGTDyErhp6n5M6fDqdA6xjf7k+IvGhk3ci0Iz3NxrA0kbck8ovR92rFpsMSoMlgjW2T8prxAQcuFmT6YmJZXEE19yLtbPZzedciNr0WVY/rSff/qfPxfHnpnLrfz0c+fh3+GXI6OzpOJhRMwHt/uyuylkAqHLp0/sxUx5Z/JNxn7Iq3vKWbW9vl3zRb814Ymw3MD3FD1DtST4fpo1YlFlWfhi8QK0wAINWq/O3RejkfDqT286HDB9aABGgu2prU7BLfncuS8hTOd9n9byYzXZ9GKLyISbtUSGrKQhYTPpYkiAgHMYhb4JhQDOJlzgwzKp+tsCTqIQyVEkLYK+ZCI4wCQL6Be4RTkMaOeG0N8YSr5qLKvCmfU5GTlRkBa+38knsVcxad5eXfXmC/E8fFKrEH4ZhhHC4raTIl6S7dRVgreiQFZ3RlIRN/FLEoKoEJJnyB0Cl9lU92qkpWkSMrN2D2PBbv0KRTnayiu7kTqhFsHrw1y5GEslz700A+/z0fzSZOkp/amPhtH98kKTgjcbTLKR3Q+kwrQNdXifT5q19zih4jNYiSgOQsEjt4j2kxvIJqcKiuMZwFLhu5FNAVCMIqoKKa7jsucHxxbFUegTEwEIsELTLHheE90e7C3HGhWFdiLXVQoQr8kpqKM8Q7h8DJn40IhzDGPLSLXh25S0MRgtbNFYO2Jjfcm9p2aPv+2ldioCXb9lixF4ANeHUc08lqhWtFXB8WLkiRTHFw7He7BOxGCd3roxcVdpcu+WrH3fXHdH0BxmN9qf3Kimpy3u0XRPNQL9367CFnb27RnwrtNxQ9HN6HRV2/LXKI0gy3JJrl+KEll7/ombT/TW0YoFHXFiB2MriB8OosXAJ/OthulHqd44E44SFnu3Nl8u17bCepg+F3Cs5vppHt2L4pwuqNMzkJSEti9NrN23KY9FxtT4dF0InUPG475USsuDluyWyiqK2/0sto/lEtpO8EhAAA=\n    path: /opt/avere/installvfxt.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        H4sIAAAAAAAC/81X/2/aRhT/3X/Fq+sKUOJAVu2HJUIVCyRFghABbbe1nXXYZzjV9rl355CI8b/v3dkYQ6Bdu02bKzX2u/f1877c4/mz5owlzRmRC8t6/v2Phf/gHVH+Au7DB3UW8TmQJACakFlEwY94FoASxKdAQkUFqAVFiZgkZE5jmijo3wGTIKhP2T0NTo10wORhcRRFBSB9wVIFCyIhZAmTCxqcAUzxJM1EyiUFHu4IM4mSIRdAgoApxhMSQUBn2XzOkjmwBI9ioukQZCInSUWiyNDOTJC9RGYCXeJxGlHDOnsEqXiaGv7QOFZiEDJ0P+BU2024ArngS8hSQBcK1qqFTUBanTQQoFipy1BhRrWdLA2Iwmi1S38ja6he0JQLBegCRCyhuVmgD0wBOkSF4MKSVIH7YBnUMUmFl0uGMgvkxhC1OFMy50cdkmPUSQ1D0aI61cWL1fntzbjnvR4Ne163P243FzymTedqdDsdjwaD3tjrdIf9W+/NBF9vO8Oe9fb6l6k3GN141/1Br+3syjc36FjvOv2pN+mhou6k/bLVssZ3V17vtvMzCtl5GdqG1u1PcmJRXbZlhVni5/jTJECeegNWFuCjnT55MK8sxZoRVMq2c34JxPC3nR8sc9h52xv3robdtk3uKdZwHIDrCrLE/xPu+gvqf3J9KhQLmY95Q3Imqa7CmCX4kRIpl1wE4OTB33Umk3ejcRePkA01glOat3NvQngPtpO7YUO7jR/bgG34CJe6uhLDrB/qLzjYOj6oySzVOT8jvk9TNaUilvBIZQ0UB2dVWlrbpbSzCRCOyJacKJhFqu28sg6Zdla5x+tvMRXzgIWPYK9qpokH9J5GtQuotR56reI5b7Vqp1ATPMIank81m+bQQSEZG0zJIU+Y4qJCjmnMxWN30/6bk4ovm2Dq9fztxHnVaJhTGh3LQFFeX07BP4zD+aHgE34o9px6IHQ8OBD5qyJaSffC6I3Ho/EFzEhQ9MIT2XNDCJlVdpKbd5KgKhMJODmfta70n+kUb0EinG2ebu2yExO+xDzooQcnL2Sj0B3RWLGY4omOE1wfXvwKzs7EyFkRuRAbM/E1b91Bba5Tihc5LTK6ZbXBnSukVEfL0bxed6adwYUZ6eXgd1Y7rqzNTZVHt4XLjNoSrCoaS8KUQcFDjSUSPs8SvALbLfO1XGhD7+EZuOFe5PDxEodwaUdGlKaFoaoexKN4hRM4L7Ao8XA2Z+4c46kiodXv4LDFwgRf24++hlkIzC1I0pQSUWwCzqqqdY2V4vMkkPau3i1IBVAmqzyhTxHbLhUeS0vYcqAuCrltkNuxXqdzvAzB/n1Dqb9vuT99XJ2fvlx/OGusXq633/bT3P4BZPkJaqtYb0F1p3XaNOwnH84O/202LtE6tLG/Z1IJLTGeTDvj6el40Lu9mb7G8xSXEIVc69peWmxn9bwyNfJCbWFxlmxHUnN42OhnJij5tI+wKZT9pjxYUodzUaxJ1IvRIGblq+kIwSTBdT9nDEeGre1d9G+vR+DCVaHsKfhHK1GLm67bOBLsLFxfQsCM+APOmMmH3lwTjCDQA9xHOaW31ExiQX+rdzsLYGiU/ruJyZchz+zFnrlKyqxUlxxr66cSj3rpxFAP7PO29aWE6gUTxfXSTfUig8OERbCkSCb4Y0GPy3ge6xrXO/HO7mz23WplFNtZZRmCytIDR2HeyMkMlxYpv4LuX4b3xy28Fayq0ORoYTqr8Bdr5/fhf+gX0X+fgGLn+R9moMBrLwUxYUmJeS6kp5X5ZWh6srzBEfL8sspd3rmRc5vDm+HU69/h9fH08mkUbj1pOHAKMWurdn9UWsXiIo8LY0w6lD8BeDh9ccUPAAA=\n    path: /opt/avere/enablecloudtrace.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/python_requirements.txt\n    permissions: \"0744\"\n\n')]",
+      "customData": "[base64('#cloud-config\n\nwrite_files:\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/installvfxt.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        H4sIAAAAAAAC/81X/2/aRhT/3X/Fq+sKUOJAVu2HJUIVCyRFghABbbe1nXXYZzjV9rl355CI8b/v3dkYQ6Bdu02bKzX2u/f1877c4/mz5owlzRmRC8t6/v2Phf/gHVH+Au7DB3UW8TmQJACakFlEwY94FoASxKdAQkUFqAVFiZgkZE5jmijo3wGTIKhP2T0NTo10wORhcRRFBSB9wVIFCyIhZAmTCxqcAUzxJM1EyiUFHu4IM4mSIRdAgoApxhMSQUBn2XzOkjmwBI9ioukQZCInSUWiyNDOTJC9RGYCXeJxGlHDOnsEqXiaGv7QOFZiEDJ0P+BU2024ArngS8hSQBcK1qqFTUBanTQQoFipy1BhRrWdLA2Iwmi1S38ja6he0JQLBegCRCyhuVmgD0wBOkSF4MKSVIH7YBnUMUmFl0uGMgvkxhC1OFMy50cdkmPUSQ1D0aI61cWL1fntzbjnvR4Ne163P243FzymTedqdDsdjwaD3tjrdIf9W+/NBF9vO8Oe9fb6l6k3GN141/1Br+3syjc36FjvOv2pN+mhou6k/bLVssZ3V17vtvMzCtl5GdqG1u1PcmJRXbZlhVni5/jTJECeegNWFuCjnT55MK8sxZoRVMq2c34JxPC3nR8sc9h52xv3robdtk3uKdZwHIDrCrLE/xPu+gvqf3J9KhQLmY95Q3Imqa7CmCX4kRIpl1wE4OTB33Umk3ejcRePkA01glOat3NvQngPtpO7YUO7jR/bgG34CJe6uhLDrB/qLzjYOj6oySzVOT8jvk9TNaUilvBIZQ0UB2dVWlrbpbSzCRCOyJacKJhFqu28sg6Zdla5x+tvMRXzgIWPYK9qpokH9J5GtQuotR56reI5b7Vqp1ATPMIank81m+bQQSEZG0zJIU+Y4qJCjmnMxWN30/6bk4ovm2Dq9fztxHnVaJhTGh3LQFFeX07BP4zD+aHgE34o9px6IHQ8OBD5qyJaSffC6I3Ho/EFzEhQ9MIT2XNDCJlVdpKbd5KgKhMJODmfta70n+kUb0EinG2ebu2yExO+xDzooQcnL2Sj0B3RWLGY4omOE1wfXvwKzs7EyFkRuRAbM/E1b91Bba5Tihc5LTK6ZbXBnSukVEfL0bxed6adwYUZ6eXgd1Y7rqzNTZVHt4XLjNoSrCoaS8KUQcFDjSUSPs8SvALbLfO1XGhD7+EZuOFe5PDxEodwaUdGlKaFoaoexKN4hRM4L7Ao8XA2Z+4c46kiodXv4LDFwgRf24++hlkIzC1I0pQSUWwCzqqqdY2V4vMkkPau3i1IBVAmqzyhTxHbLhUeS0vYcqAuCrltkNuxXqdzvAzB/n1Dqb9vuT99XJ2fvlx/OGusXq633/bT3P4BZPkJaqtYb0F1p3XaNOwnH84O/202LtE6tLG/Z1IJLTGeTDvj6el40Lu9mb7G8xSXEIVc69peWmxn9bwyNfJCbWFxlmxHUnN42OhnJij5tI+wKZT9pjxYUodzUaxJ1IvRIGblq+kIwSTBdT9nDEeGre1d9G+vR+DCVaHsKfhHK1GLm67bOBLsLFxfQsCM+APOmMmH3lwTjCDQA9xHOaW31ExiQX+rdzsLYGiU/ruJyZchz+zFnrlKyqxUlxxr66cSj3rpxFAP7PO29aWE6gUTxfXSTfUig8OERbCkSCb4Y0GPy3ge6xrXO/HO7mz23WplFNtZZRmCytIDR2HeyMkMlxYpv4LuX4b3xy28Fayq0ORoYTqr8Bdr5/fhf+gX0X+fgGLn+R9moMBrLwUxYUmJeS6kp5X5ZWh6srzBEfL8sspd3rmRc5vDm+HU69/h9fH08mkUbj1pOHAKMWurdn9UWsXiIo8LY0w6lD8BeDh9ccUPAAA=\n    path: /opt/avere/enablecloudtrace.sh\n    permissions: \"0744\"\n -  encoding: gzip\n    content: !!binary |\n        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\n    path: /opt/avere/python_requirements.txt\n    permissions: \"0744\"\n\n')]",
       "linuxConfiguration": {
         "disablePasswordAuthentication": "true",
         "ssh": {
@@ -283,8 +302,8 @@
     "ubuntuStorageProfile": {
       "imageReference": {
         "publisher": "Canonical",
-        "offer": "UbuntuServer",
-        "sku": "18.04-LTS",
+        "offer": "0001-com-ubuntu-server-focal",
+        "sku": "20_04-lts-gen2",
         "version": "latest"
       }
     },
@@ -313,13 +332,13 @@
   },
   "resources": [
     {
-      "apiVersion": "2018-02-01",
-      "name": "pid-7a86fa6c-a5c7-4f21-b9fa-efa3dcbfbb86",
+      "apiVersion": "2021-04-01",
+      "name": "pid-221d543a-3ef8-4c1f-8159-d58841f8fd32-partnercenter",
       "type": "Microsoft.Resources/deployments",
       "properties": {
         "mode": "Incremental",
         "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
           "resources": []
         }
@@ -327,12 +346,12 @@
     },
     {
       "condition": "[variables('createVirtualNetwork')]",
-      "apiVersion": "2017-10-01",
+      "apiVersion": "2022-01-01",
       "type": "Microsoft.Network/virtualNetworks",
       "name": "[variables('virtualNetworkName')]",
       "location": "[variables('location')]",
       "dependsOn": [
-        "[concat('Microsoft.Network/networkSecurityGroups/', variables('networkSecurityGroupName'))]"
+        "[resourceId('Microsoft.Network/networkSecurityGroups/', variables('networkSecurityGroupName'))]"
       ],
       "properties": {
         "addressSpace": {
@@ -362,14 +381,14 @@
       "condition": "[variables('useAvereBackedStorageAccount')]",
       "name": "[variables('avereBackedStorageAccountName')]",
       "type": "Microsoft.Storage/storageAccounts",
-      "apiVersion": "2017-10-01",
+      "apiVersion": "2021-09-01",
       "sku": {
         "name": "[variables('storageAccountType')]"
       },
       "kind": "[variables('storageAccountKind')]",
       "location": "[variables('location')]",
       "dependsOn": [
-        "[concat('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
+        "[resourceId('Microsoft.Network/virtualNetworks/', variables('virtualNetworkName'))]"
       ],
       "properties": {
         "networkAcls": {
@@ -386,7 +405,7 @@
     },
     {
       "condition": "[variables('createVirtualNetwork')]",
-      "apiVersion": "2017-10-01",
+      "apiVersion": "2022-01-01",
       "type": "Microsoft.Network/networkSecurityGroups",
       "name": "[variables('networkSecurityGroupName')]",
       "location": "[variables('location')]",
@@ -410,25 +429,25 @@
     },
     {
       "condition": "[variables('createVirtualNetwork')]",
-      "apiVersion": "2017-10-01",
+      "apiVersion": "2022-01-01",
       "type": "Microsoft.Network/publicIPAddresses",
       "name": "[variables('publicIPAddressName')]",
       "location": "[variables('location')]",
       "dependsOn": [
-        "[concat('Microsoft.Storage/storageAccounts/', variables('avereBackedStorageAccountName'))]"
+        "[resourceId('Microsoft.Storage/storageAccounts/', variables('avereBackedStorageAccountName'))]"
       ],
       "properties": {
         "publicIPAllocationMethod": "Static"
       }
     },
     {
-      "condition": "[variables('createNic?')]",
-      "apiVersion": "2017-10-01",
+      "condition": "[variables('createNic')]",
+      "apiVersion": "2022-01-01",
       "type": "Microsoft.Network/networkInterfaces",
       "name": "[variables('nicName')]",
       "location": "[variables('location')]",
       "dependsOn": [
-        "[concat('Microsoft.Network/publicIPAddresses/', variables('publicIPAddressName'))]"
+        "[resourceId('Microsoft.Network/publicIPAddresses/', variables('publicIPAddressName'))]"
       ],
       "properties": {
         "ipConfigurations": [
@@ -446,7 +465,7 @@
       }
     },
     {
-      "apiVersion": "2017-12-01",
+      "apiVersion": "2021-07-01",
       "tags": {
         "averevfxt": "server"
       },
@@ -458,11 +477,11 @@
       "location": "[variables('location')]",
       "plan": "[variables('plan')]",
       "dependsOn": [
-        "[concat('Microsoft.Network/networkInterfaces/', variables('nicName'))]"
+        "[resourceId('Microsoft.Network/networkInterfaces/', variables('nicName'))]"
       ],
       "properties": {
         "hardwareProfile": {
-          "vmSize": "[variables('controllerVMSize')]"
+          "vmSize": "[parameters('controllerVMSize')]"
         },
         "osProfile": "[variables('controllerOSProfile')]",
         "storageProfile": "[variables('storageProfile')]",
@@ -476,55 +495,55 @@
       }
     },
     {
-      "apiVersion": "2018-09-01-preview",
+      "apiVersion": "2022-01-01-preview",
       "name": "[variables('createRoleAssignmentId')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "dependsOn": [
-        "[concat('Microsoft.Compute/virtualMachines/', variables('vmName'))]"
+        "[resourceId('Microsoft.Compute/virtualMachines/', variables('vmName'))]"
       ],
       "properties": {
-        "roleDefinitionId": "[variables('avereCreateClusterRoleFullyQualifiedId')]",
-        "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2017-12-01', 'Full').identity.principalId]",
+        "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions', parameters('avereCreateClusterRoleId'))]",
+        "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2022-03-01', 'Full').identity.principalId]",
         "scope": "[resourceGroup().id]",
         "principalType": "ServicePrincipal"
       }
     },
     {
-      "apiVersion": "2018-09-01-preview",
+      "apiVersion": "2022-01-01-preview",
       "name": "[variables('userAdminRoleAssignmentId')]",
       "type": "Microsoft.Authorization/roleAssignments",
       "dependsOn": [
-        "[concat('Microsoft.Authorization/roleAssignments/', variables('createRoleAssignmentId'))]"
+        "[resourceId('Microsoft.Authorization/roleAssignments/', variables('createRoleAssignmentId'))]"
       ],
       "properties": {
-        "roleDefinitionId": "[variables('userAdminClusterRoleFullyQualifiedId')]",
-        "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2017-12-01', 'Full').identity.principalId]",
+        "roleDefinitionId":"[resourceId('Microsoft.Authorization/roleDefinitions/', parameters('userAdminClusterRoleUUID'))]",
+        "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2022-03-01', 'Full').identity.principalId]",
         "scope": "[resourceGroup().id]",
         "principalType": "ServicePrincipal"
       }
     },
     {
       "condition": "[and(not(variables('createVirtualNetwork')),not(equals(resourceGroup().name, variables('virtualNetworkResourceGroup'))))]",
-      "apiVersion": "2018-05-01",
-      "name": "[variables('vnetAssignRoleName')]",
+      "apiVersion": "2021-04-01",
+      "name": "[parameters('vnetAssignRoleName')]",
       "type": "Microsoft.Resources/deployments",
       "dependsOn": [
-        "[concat('Microsoft.Compute/virtualMachines/', variables('vmName'))]"
+        "[resourceId('Microsoft.Compute/virtualMachines/', variables('vmName'))]"
       ],
       "resourceGroup": "[variables('virtualNetworkResourceGroup')]",
       "properties": {
         "mode": "Incremental",
         "template": {
-          "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",
+          "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
           "contentVersion": "1.0.0.0",
           "resources": [
             {
               "name": "[variables('createVNETRoleAssignmentId')]",
               "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2018-09-01-preview",
+              "apiVersion": "2022-01-01-preview",
               "properties": {
-                "roleDefinitionId": "[variables('avereCreateClusterRoleFullyQualifiedId')]",
-                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2017-12-01', 'Full').identity.principalId]",
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions/', parameters('avereCreateClusterRoleId'))]",
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2022-03-01', 'Full').identity.principalId]",
                 "scope": "[concat(subscription().id, '/resourceGroups/', parameters('virtualNetworkResourceGroup'))]",
                 "principalType": "ServicePrincipal"
               }
@@ -532,13 +551,13 @@
             {
               "name": "[variables('byonetUserAdminRoleAssignmentId')]",
               "type": "Microsoft.Authorization/roleAssignments",
-              "apiVersion": "2018-09-01-preview",
+              "apiVersion": "2022-01-01-preview",
               "dependsOn": [
-                "[concat('Microsoft.Authorization/roleAssignments/', variables('createVNETRoleAssignmentId'))]"
+                "[variables('createVNETRoleAssignmentIdRoleAssignment')]"
               ],
               "properties": {
-                "roleDefinitionId": "[variables('userAdminClusterRoleFullyQualifiedId')]",
-                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2017-12-01', 'Full').identity.principalId]",
+                "roleDefinitionId": "[resourceId('Microsoft.Authorization/roleDefinitions/', parameters('userAdminClusterRoleUUID'))]",
+                "principalId": "[reference(resourceId('Microsoft.Compute/virtualMachines/', variables('vmName')), '2022-03-01', 'Full').identity.principalId]",
                 "scope": "[concat(subscription().id, '/resourceGroups/', parameters('virtualNetworkResourceGroup'))]",
                 "principalType": "ServicePrincipal"
               }
@@ -548,14 +567,14 @@
       }
     },
     {
-      "condition": "[variables('useExtension?')]",
+      "condition": "[variables('useExtension')]",
       "type": "Microsoft.Compute/virtualMachines/extensions",
       "name": "[concat(variables('vmName'), variables('extensionName'))]",
-      "apiVersion": "2017-12-01",
+      "apiVersion": "2022-03-01",
       "location": "[variables('location')]",
       "dependsOn": [
-        "[resourceId('Microsoft.Authorization/roleAssignments', variables('userAdminRoleAssignmentId'))]",
-        "[concat('Microsoft.Resources/deployments/', variables('vnetAssignRoleName'))]"
+        "[resourceId('Microsoft.Authorization/roleAssignments/', variables('userAdminRoleAssignmentId'))]",
+        "[variables('vnetAssignRoleDeployment')]"
       ],
       "properties": {
         "publisher": "Microsoft.Azure.Extensions",

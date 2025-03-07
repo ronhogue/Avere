@@ -45,20 +45,29 @@ variable "subnet_name" {
   default     = "render_clients1"
 }
 
+variable "ssh_port" {
+  description = "ssh port"
+  default     = 22
+}
+
+variable "vm_count" {
+  description = "number of instances created in VMSS"
+  default     = 12
+}
+
 // customize the simple VM by editing the following local variables
 locals {
   unique_name  = "vmss"
-  vm_count     = 12
   vmss_size    = "Standard_D2s_v3"
   mount_target = "/data"
 }
 
 terraform {
-  required_version = ">= 0.14.0,< 0.16.0"
+  required_version = ">= 0.14.0"
   required_providers {
     azurerm = {
       source  = "hashicorp/azurerm"
-      version = "~>2.56.0"
+      version = "~>2.66.0"
     }
   }
 }
@@ -77,6 +86,7 @@ module "vdbench_configure" {
   nfs_address     = tolist(var.vserver_ip_addresses)[0]
   nfs_export_path = var.nfs_export_path
   vdbench_url     = var.vdbench_url
+  ssh_port        = var.ssh_port
 }
 
 // the VMSS module
@@ -88,7 +98,7 @@ module "vmss" {
   admin_username                 = var.controller_username
   ssh_key_data                   = var.ssh_key_data
   unique_name                    = local.unique_name
-  vm_count                       = local.vm_count
+  vm_count                       = var.vm_count
   vm_size                        = local.vmss_size
   virtual_network_resource_group = var.vnet_resource_group
   virtual_network_name           = var.vnet_name
@@ -115,7 +125,7 @@ output "vmss_name" {
 }
 
 output "vmss_addresses_command" {
-  // local-exec doesn't return output, and the only way to 
+  // local-exec doesn't return output, and the only way to
   // try to get the output is follow advice from https://stackoverflow.com/questions/49136537/obtain-ip-of-internal-load-balancer-in-app-service-environment/49436100#49436100
   // in the meantime just provide the az cli command to
   // the customer

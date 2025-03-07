@@ -6,8 +6,9 @@ set -x
 # NEED following ENV VARS
 # BOOTSTRAP_PATH - the mount path for bootstrap
 #
+# STORAGE_ACCOUNT_RESOURCE_GROUP - the resource group of the storage account
 # STORAGE_ACCOUNT - the storage account hosting the job queue
-# STORAGE_KEY - the key to the storage account
+
 # QUEUE_PREFIX - the queue prefix
 # BOOTSTRAP_EXPORT_PATH
 # BOOTSTRAP_MOUNT_ADDRESS
@@ -16,6 +17,7 @@ set -x
 # (OPT)VMSS_SUBNET
 # (OPT)VMSS_SSHPUBLICKEY
 # (OPT)VMSS_PASSWORD
+# (OPT)VMSS_WORKER_COUNT
 
 SERVICE_USER=root
 RSYSLOG_FILE="35-cachewarmer-manager.conf"
@@ -39,8 +41,8 @@ function write_system_files() {
     cp $SRC_FILE $DST_FILE
     sed -i "s/USERREPLACE/$SERVICE_USER/g" $DST_FILE
     sed -i "s/GROUPREPLACE/$SERVICE_USER/g" $DST_FILE
+    sed -i "s:STORAGE_RG_REPLACE:$STORAGE_ACCOUNT_RESOURCE_GROUP:g" $DST_FILE
     sed -i "s:STORAGE_ACCOUNT_REPLACE:$STORAGE_ACCOUNT:g" $DST_FILE
-    sed -i "s:STORAGE_KEY_REPLACE:$STORAGE_KEY:g" $DST_FILE
     sed -i "s/QUEUE_PREFIX_REPLACE/$QUEUE_PREFIX/g" $DST_FILE
     sed -i "s:BOOTSTRAP_EXPORT_PATH_REPLACE:$BOOTSTRAP_EXPORT_PATH:g" $DST_FILE
     sed -i "s:BOOTSTRAP_MOUNT_ADDRESS_REPLACE:$BOOTSTRAP_MOUNT_ADDRESS:g" $DST_FILE
@@ -65,6 +67,31 @@ function write_system_files() {
     else
         sed -i "s/VMSS_SUBNET_NAME_REPLACE/-vmssSubnetName $VMSS_SUBNET/g" $DST_FILE
     fi
+    
+    if [[ -z "${VMSS_WORKER_COUNT}" ]]; then
+        sed -i "s/VMSS_WORKER_COUNT_REPLACE//g" $DST_FILE
+    else
+        sed -i "s/VMSS_WORKER_COUNT_REPLACE/-workerCount $VMSS_WORKER_COUNT/g" $DST_FILE
+    fi
+
+    # set the proxy information
+    if [[ -z "${http_proxy}" ]]; then
+        sed -i "s/HTTP_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s#HTTP_PROXY_REPLACE#Environment=\"http_proxy=$http_proxy\"#g" $DST_FILE
+    fi
+
+    if [[ -z "${https_proxy}" ]]; then
+        sed -i "s/HTTPS_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s#HTTPS_PROXY_REPLACE#Environment=\"https_proxy=$https_proxy\"#g" $DST_FILE
+    fi
+
+    if [[ -z "${no_proxy}" ]]; then
+        sed -i "s/NO_PROXY_REPLACE//g" $DST_FILE
+    else
+        sed -i "s/NO_PROXY_REPLACE/Environment=\"no_proxy=$no_proxy\"/g" $DST_FILE
+    fi
 
     if [ -f '/etc/centos-release' ]; then 
         sed -i "s/chown syslog:adm/chown root:root/g" $DST_FILE
@@ -78,6 +105,27 @@ function configure_rsyslog() {
     # enable listen on port 514/TCP
     sed -i 's/^#module(load="imtcp")/module(load="imtcp")/g' /etc/rsyslog.conf
     sed -i 's/^#input(type="imtcp" port="514")/input(type="imtcp" port="514")/g' /etc/rsyslog.conf
+    
+    # ensure the logs are rotating
+    if grep -F --quiet "/var/log/cachewarmer-manager.log" /etc/logrotate.d/rsyslog; then
+        echo "not updating /etc/logrotate.d/rsyslog, already there"
+    else
+        /bin/cat <<EOM >>/etc/logrotate.d/rsyslog
+/var/log/cachewarmer-manager.log
+{
+        rotate 2
+        daily
+        missingok
+        notifempty
+        compress
+        postrotate
+                /usr/lib/rsyslog/rsyslog-rotate
+        endscript
+}
+EOM
+    fi
+    
+    # restart syslog
     systemctl restart rsyslog
 }
 

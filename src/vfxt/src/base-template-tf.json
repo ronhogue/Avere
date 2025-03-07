@@ -182,8 +182,8 @@
     "ubuntuStorageProfile": {
       "imageReference": {
         "publisher": "Canonical",
-        "offer": "UbuntuServer",
-        "sku": "18.04-LTS",
+        "offer": "0001-com-ubuntu-server-focal",
+        "sku": "20_04-lts-gen2",
         "version": "latest"
       }
     },
@@ -208,7 +208,7 @@
   "resources": [
     {
       "apiVersion": "2018-02-01",
-      "name": "pid-7a86fa6c-a5c7-4f21-b9fa-efa3dcbfbb86",
+      "name": "pid-221d543a-3ef8-4c1f-8159-d58841f8fd32-partnercenter",
       "type": "Microsoft.Resources/deployments",
       "properties": {
         "mode": "Incremental",

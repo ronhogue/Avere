@@ -15,8 +15,8 @@ import (
 	"time"
 
 	"github.com/Azure/Avere/src/go/pkg/log"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/compute/mgmt/compute"
-	"github.com/Azure/azure-sdk-for-go/profiles/latest/network/mgmt/network"
+	"github.com/Azure/azure-sdk-for-go/profiles/2020-09-01/compute/mgmt/compute"
+	"github.com/Azure/azure-sdk-for-go/profiles/2020-09-01/network/mgmt/network"
 	"github.com/Azure/go-autorest/autorest/azure/auth"
 	"github.com/Azure/go-autorest/autorest/to"
 )
@@ -30,6 +30,9 @@ type CacheWarmerCloudInit struct {
 }
 
 func InitializeCloutInit(
+	httpProxyStr string,
+	httpsProxyStr string,
+	noProxyStr string,
 	bootstrapAddress string,
 	bootstrapExportPath string,
 	bootstrapScriptPath string,
@@ -39,7 +42,10 @@ func InitializeCloutInit(
 
 	localMountPath := "/b" // this is a temporary mount on the filesystem
 	envVars := fmt.Sprintf(
-		" BOOTSTRAP_PATH='%s' BOOTSTRAP_SCRIPT='%s' STORAGE_ACCOUNT='%s' STORAGE_KEY='%s' QUEUE_PREFIX='%s' ",
+		" %s %s %s BOOTSTRAP_PATH='%s' BOOTSTRAP_SCRIPT='%s' STORAGE_ACCOUNT='%s' STORAGE_KEY='%s' QUEUE_PREFIX='%s' ",
+		httpProxyStr,
+		httpsProxyStr,
+		noProxyStr,
 		localMountPath,
 		bootstrapScriptPath,
 		storageAccount,
@@ -211,6 +217,9 @@ func createCacheWarmerVmssModel(
 	publisher string,
 	offer string,
 	sku string,
+	planName string,
+	planPublisher string,
+	planProduct string,
 	priority compute.VirtualMachinePriorityTypes,
 	evictionPolicy compute.VirtualMachineEvictionPolicyTypes,
 	subnetId string,
@@ -236,6 +245,16 @@ func createCacheWarmerVmssModel(
 		}
 	}
 
+	var computePlan *compute.Plan
+	computePlan = nil
+	if len(planName) > 0 && len(planPublisher) > 0 && len(planProduct) > 0 {
+		computePlan = &compute.Plan{
+			Name:      to.StringPtr(planName),
+			Publisher: to.StringPtr(planPublisher),
+			Product:   to.StringPtr(planProduct),
+		}
+	}
+
 	// create the vmss model
 	return compute.VirtualMachineScaleSet{
 		Name:     to.StringPtr(vmssName),
@@ -244,6 +263,7 @@ func createCacheWarmerVmssModel(
 			Name:     to.StringPtr(vmssSKU),
 			Capacity: to.Int64Ptr(nodeCount),
 		},
+		Plan: computePlan,
 		VirtualMachineScaleSetProperties: &compute.VirtualMachineScaleSetProperties{
 			Overprovision: to.BoolPtr(false),
 			UpgradePolicy: &compute.UpgradePolicy{
@@ -296,7 +316,7 @@ func createCacheWarmerVmssModel(
 }
 
 func VmssExists(ctx context.Context, azureClients *AzureClients, name string) (bool, error) {
-	log.Info.Printf("checking if VMSS %s/%s", azureClients.LocalMetadata.ResourceGroup, name)
+	log.Info.Printf("checking if VMSS %s/%s exists", azureClients.LocalMetadata.ResourceGroup, name)
 	_, err := azureClients.VMSSClient.Get(ctx, azureClients.LocalMetadata.ResourceGroup, name)
 	if err != nil {
 		if strings.Contains(err.Error(), "Code=\"ResourceNotFound\"") || strings.Contains(err.Error(), "Code=\"NotFound\"") {
@@ -331,8 +351,7 @@ func DeleteVmss(ctx context.Context, azureClients *AzureClients, name string) er
 	defer log.Info.Printf(" %s %s DeleteVmss]", azureClients.LocalMetadata.ResourceGroup, name)
 
 	// passing nil instance ids will deallocate all VMs in the VMSS
-	forceDeletion := false
-	future, err := azureClients.VMSSClient.Delete(ctx, azureClients.LocalMetadata.ResourceGroup, name, &forceDeletion)
+	future, err := azureClients.VMSSClient.Delete(ctx, azureClients.LocalMetadata.ResourceGroup, name)
 	if err != nil {
 		return fmt.Errorf("cannot delete vmss (%s %s): %v", azureClients.LocalMetadata.ResourceGroup, name, err)
 	}

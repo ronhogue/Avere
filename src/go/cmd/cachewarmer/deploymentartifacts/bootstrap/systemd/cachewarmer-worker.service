@@ -9,10 +9,14 @@ User=USERREPLACE
 Group=GROUPREPLACE
 LimitNOFILE=16384
 
+HTTP_PROXY_REPLACE
+HTTPS_PROXY_REPLACE
+NO_PROXY_REPLACE
+
 Restart=always
 RestartSec=2
 
-ExecStart=/usr/local/bin/cachewarmer-worker -storageAccountName "STORAGEACCOUNTREPLACE" -storageKey "STORAGEKEYREPLACE" -queueNamePrefix "QUEUEPREFIXREPLACE"
+ExecStart=/usr/local/bin/cachewarmer-worker -storageAccountResourceGroup "STORAGE_RG_REPLACE" -storageAccountName "STORAGEACCOUNTREPLACE" -storageKey "STORAGEKEYREPLACE" -queueNamePrefix "QUEUEPREFIXREPLACE"
 
 # make sure log directory exists and owned by syslog
 PermissionsStartOnly=true

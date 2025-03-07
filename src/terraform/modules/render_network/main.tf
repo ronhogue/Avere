@@ -32,7 +32,7 @@ resource "azurerm_network_security_group" "ssh_nsg" {
       priority                   = security_rule.key + 121
       direction                  = "Inbound"
       access                     = "Allow"
-      protocol                   = "Tcp"
+      protocol                   = "Udp"
       source_port_range          = "*"
       destination_port_ranges    = var.open_external_udp_ports
       source_address_prefix      = security_rule.value
@@ -69,7 +69,7 @@ resource "azurerm_network_security_group" "no_internet_nsg" {
 }
 
 resource "azurerm_virtual_network" "vnet" {
-  name                = "rendervnet"
+  name                = var.vnet_name
   address_space       = [var.vnet_address_space]
   location            = var.location
   resource_group_name = var.resource_group_name
@@ -78,7 +78,49 @@ resource "azurerm_virtual_network" "vnet" {
   depends_on = [
     azurerm_resource_group.render_rg,
   ]
+
+  tags = {
+    // needed for DEVOPS testing
+    SkipNRMSNSG = "12345"
+  }
 }
+
+////////////////////////////////////////////////////////////////
+// peer the networks
+////////////////////////////////////////////////////////////////
+data "azurerm_virtual_network" "onprem" {
+  count               = var.peer_vnet_rg == null || var.peer_vnet_rg == "" || var.peer_vnet_name == null || var.peer_vnet_name == "" ? 0 : 1
+  name                = var.peer_vnet_name
+  resource_group_name = var.peer_vnet_rg
+}
+
+resource "azurerm_virtual_network_peering" "peer-to-onprem" {
+  count                     = var.peer_vnet_rg == null || var.peer_vnet_rg == "" || var.peer_vnet_name == null || var.peer_vnet_name == "" ? 0 : 1
+  name                      = "peertoonprem"
+  resource_group_name       = azurerm_virtual_network.vnet.resource_group_name
+  virtual_network_name      = azurerm_virtual_network.vnet.name
+  remote_virtual_network_id = data.azurerm_virtual_network.onprem[0].id
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+  ]
+}
+
+resource "azurerm_virtual_network_peering" "peer-from-onprem" {
+  count                     = var.peer_vnet_rg == null || var.peer_vnet_rg == "" || var.peer_vnet_name == null || var.peer_vnet_name == "" ? 0 : 1
+  name                      = "peerfromonprem"
+  resource_group_name       = var.peer_vnet_rg
+  virtual_network_name      = var.peer_vnet_name
+  remote_virtual_network_id = azurerm_virtual_network.vnet.id
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+  ]
+}
+
+////////////////////////////////////////////////////////////////
+// subnets
+////////////////////////////////////////////////////////////////
 
 resource "azurerm_subnet" "cloud_cache" {
   name                 = var.subnet_cloud_cache_subnet_name
@@ -86,6 +128,12 @@ resource "azurerm_subnet" "cloud_cache" {
   resource_group_name  = var.resource_group_name
   address_prefixes     = [var.subnet_cloud_cache_address_prefix]
   service_endpoints    = ["Microsoft.Storage"]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "cloud_cache" {
@@ -98,6 +146,12 @@ resource "azurerm_subnet" "cloud_filers" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = var.resource_group_name
   address_prefixes     = [var.subnet_cloud_filers_address_prefix]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "cloud_filers" {
@@ -110,6 +164,12 @@ resource "azurerm_subnet" "cloud_filers_ha" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = var.resource_group_name
   address_prefixes     = [var.subnet_cloud_filers_ha_address_prefix]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "cloud_filers_ha" {
@@ -124,6 +184,12 @@ resource "azurerm_subnet" "jumpbox" {
   address_prefixes     = [var.subnet_jumpbox_address_prefix]
   # needed for the controller to add storage containers
   service_endpoints = ["Microsoft.Storage"]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "jumpbox" {
@@ -136,6 +202,12 @@ resource "azurerm_subnet" "render_clients1" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = var.resource_group_name
   address_prefixes     = [var.subnet_render_clients1_address_prefix]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 // partition the render clients in groups of roughly 500 nodes (max 507, and azure takes 5 reserved)
@@ -149,6 +221,12 @@ resource "azurerm_subnet" "render_clients2" {
   virtual_network_name = azurerm_virtual_network.vnet.name
   resource_group_name  = var.resource_group_name
   address_prefixes     = [var.subnet_render_clients2_address_prefix]
+
+  depends_on = [
+    azurerm_virtual_network.vnet,
+    azurerm_virtual_network_peering.peer-to-onprem,
+    azurerm_virtual_network_peering.peer-from-onprem,
+  ]
 }
 
 resource "azurerm_subnet_network_security_group_association" "render_clients2" {

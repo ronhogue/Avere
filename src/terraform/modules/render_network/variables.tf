@@ -7,6 +7,11 @@ variable "resource_group_name" {
   description = "The resource group to contain the NFS filer."
 }
 
+variable "vnet_name" {
+  description = "The name of the vnet."
+  default = "rendervnet"
+}
+
 variable "location" {
   description = "The Azure Region into which all resources of NFS filer will be created."
 }
@@ -99,4 +104,14 @@ variable "open_external_udp_ports" {
 variable "open_external_sources" {
   default     = ["*"]
   description = "this is the external source to open on the subnet"
+}
+
+variable "peer_vnet_rg" {
+  default     = ""
+  description = "the rg of the vnet to peer to"
+}
+
+variable "peer_vnet_name" {
+  default     = ""
+  description = "the name of vnet to peer this vnet to"
 }
